@@ -17,6 +17,8 @@ format:
       - "*.js"
       - "*.mp3"
 editor: source
+execute: 
+  echo: false
 ---
 
 ```{r setup, include=FALSE}
@@ -114,8 +116,6 @@ Create plots showing each Greek vs. futures price over F ∈ [50, 100], with one
 - What the changing Gamma means for a delta-hedger rebalancing daily as WTI moves through the $50–$100 range.
 
 ```{r}
-library(RTL)
-library(tidyverse)
 library(purrr)
 library(patchwork)
 
@@ -134,12 +134,13 @@ t1 <- dplyr::tribble(
 F0 <- 73
 r <- 0.04
 T2M <- 3/12
+mult <- 1000
 
 delta_step <- 0.25
 vega_step <- 1/100
 theta_step <- 1/365
 
-# I am assuming these options are American style options, so I will use the CRR model to value them and set the cost of carry equal to 0 because neither the futures nor the options pay dividends, and because the options are on WTI futures, there are also no storage costs related to owning a position in a future's contract, there is however, a financing cost in the form of margin, but I will ignore that for the purposes of this project becasue the pricing models that we use to value the options are based on a risk neutral probability. 
+# I am assuming these options are American style options, so I will use the CRR model to value them and set the cost of carry equal to 0 because neither the futures nor the options pay dividends, and because the options are on WTI futures, there are also no storage costs related to owning a position in a future's contract, there is however, a financing cost in the form of margin, but I will ignore that for the purposes of this project because the pricing models that we use to value the options are based on a risk neutral probability. 
 
 
 calculate_crr <- function(S, X, T2M, r, b, N, sigma, type, optionStyle = "american") {
@@ -149,7 +150,12 @@ calculate_crr <- function(S, X, T2M, r, b, N, sigma, type, optionStyle = "americ
 t1 <- t1 %>% 
   dplyr::mutate(sigma = as.numeric(str_extract(`Impl. Vol`,pattern = "\\d{2}\\.\\d{2}")) / 100,
                 X = `Strike K ($/bbl)`,
-                Type = tolower(Type)) %>% 
+                Type = tolower(Type),
+                n_contracts = dplyr::case_match(
+                  Position,
+                "P1" ~  2000,
+                "P2" ~ -2000,
+                "P3" ~ -2000)) %>% 
   dplyr::mutate(
     P_current = purrr::pmap_dbl(
       .l = list(S = F0, X = X,T2M = T2M, r = r, b = 0, N = 1000, sigma = sigma, type = Type, optionStyle = "american"),
@@ -175,24 +181,34 @@ t1 <- t1 %>%
       .l = list(S = F0, X = X,T2M = T2M - theta_step, r = r, b = 0, N = 1000, sigma = sigma, type = Type, optionStyle = "american"),
       .f = calculate_crr
     ),
-    delta = (P_up - P_down) / 2 * delta_step,
-    gamma = (P_up - 2 * P_current + P_down) / delta_step ^ 2,
-    vega = (P_up_vega - P_down_vega) / 2 * vega_step * 100,
-    theta = P_down_theta - P_current
+    delta = ((P_up - P_down) / (2 * delta_step)) * n_contracts * mult,
+    gamma = ((P_up - 2 * P_current + P_down) / (delta_step ^ 2) )* n_contracts * mult,
+    vega = ((P_up_vega - P_down_vega) / (2 * vega_step)) * n_contracts * mult,
+    theta = (P_down_theta - P_current) * n_contracts * mult
     )
 
 
 F.grid <- seq(from = 50, to = 100, by  = 0.5)
 
 greeks_df <- t1 %>% 
-  dplyr::select(Position,Type,sigma,X) %>% 
+  dplyr::select(Position,Type,sigma,X, n_contracts) %>% 
   tidyr::crossing(S = F.grid) %>% 
   rowwise() %>% 
-  dplyr::mutate(delta = RTL::GBSOption(S = S, X = X, T2M = T2M, r = r, b = 0, sigma = sigma, type = Type)$delta,
-                gamma = RTL::GBSOption(S = S, X = X, T2M = T2M, r = r, b = 0, sigma = sigma, type = Type)$gamma,
-                vega = RTL::GBSOption(S = S, X = X, T2M = T2M, r = r, b = 0, sigma = sigma, type = Type)$vega,
-                theta = RTL::GBSOption(S = S, X = X, T2M = T2M, r = r, b = 0, sigma = sigma, type = Type)$theta) %>% 
+  dplyr::mutate(
+    results = list(RTL::GBSOption(S=S, X=X, T2M=T2M, r=r, 
+                                      b=0, sigma=sigma, type=Type)),
+    raw_delta   = results$delta,
+    raw_gamma   = results$gamma,
+    raw_vega    = results$vega,
+    raw_theta   = results$theta,
+    
+    delta       = raw_delta * n_contracts * 1000,
+    gamma       = raw_gamma * n_contracts * 1000,
+    vega        = raw_vega  * n_contracts * 1000,
+    theta       = raw_theta * n_contracts * 1000) %>% 
+  
   dplyr::ungroup() %>% 
+  dplyr::select(-results,-starts_with("raw")) %>% 
   dplyr::mutate(Position = case_match(
     Position,
     "P1" ~ "Long Put  X=$70 σ=35%",
@@ -206,6 +222,7 @@ p1 <- greeks_df %>%
   geom_line(linewidth = 0.9) +
   geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
   scale_x_continuous(labels = scales::dollar_format()) +
+  scale_y_continuous(labels = scales::dollar_format())+
   labs(title = "Delta", x = "Futures Price ($/bbl)", y = "Delta") +
   theme_minimal()
 
@@ -214,6 +231,7 @@ p2 <- greeks_df %>%
   geom_line(linewidth = 0.9) +
   geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
   scale_x_continuous(labels = scales::dollar_format()) +
+  scale_y_continuous(labels = scales::dollar_format())+
   labs(title = "Gamma", x = "Futures Price ($/bbl)", y = "Gamma") +
   theme_minimal()
 
@@ -222,6 +240,7 @@ p3 <- greeks_df %>%
   geom_line(linewidth = 0.9) +
   geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
   scale_x_continuous(labels = scales::dollar_format()) +
+  scale_y_continuous(labels = scales::dollar_format())+
   labs(title = "Vega", x = "Futures Price ($/bbl)", y = "Vega") +
   theme_minimal()
 
@@ -230,6 +249,7 @@ p4 <- greeks_df %>%
   geom_line(linewidth = 0.9) +
   geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
   scale_x_continuous(labels = scales::dollar_format()) +
+  scale_y_continuous(labels = scales::dollar_format())+
   labs(title = "Theta", x = "Futures Price ($/bbl)", y = "Theta") +
   theme_minimal()
 
@@ -241,6 +261,8 @@ p4
 ```
 
 
+
+
 ```{r q1.d}
 
 # A more valuable put means price is dropping so a short put will decrease portfolio value and a long put will increase it as prices fall. 
@@ -248,23 +270,73 @@ p4
 
 # Need to add gamma here and scale everything by # of barrels as well
 
-port_val <- t1 %>% 
+
+
+port <- t1 %>% 
   dplyr::select(Position,Type,sigma,X) %>% 
   tidyr::crossing(S = F.grid) %>% 
   dplyr::rowwise() %>% 
-  dplyr::mutate(price = RTL::GBSOption(S = S, X = X, T2M = T2M, r = r, b = 0, sigma = sigma, type = Type)$price) %>% 
-  dplyr::ungroup() %>% 
+  dplyr::mutate(price = RTL::GBSOption(S = S, X = X, T2M = T2M, r = r, b = 0, sigma = sigma, type = Type)$price,
+                gamma = RTL::GBSOption(S = S, X = X, T2M = T2M, r = r, b = 0, sigma = sigma, type = Type)$gamma,
+                vega = RTL::GBSOption(S = S, X = X, T2M = T2M, r = r, b = 0, sigma = sigma, type = Type)$vega,
+                theta = RTL::GBSOption(S = S, X = X, T2M = T2M, r = r, b = 0, sigma = sigma, type = Type)$theta,
+                delta = RTL::GBSOption(S = S, X = X, T2M = T2M, r = r, b = 0, sigma = sigma, type = Type)$delta) %>% 
+  dplyr::ungroup()
+
+
+port_gamma <- port %>% 
+  dplyr::select(Position, S, gamma) %>%
+  tidyr::pivot_wider(names_from = Position,
+                     values_from = gamma,
+                     names_prefix = "g") %>% 
+  dplyr::mutate(port_gamma = (gP1 * 2000 - gP2 * 2000 - gP3 * 2000)*mult) %>% 
+  dplyr::select(S,port_gamma)
+  
+  
+  
+  port_summary <- port %>% 
   dplyr::select(Position, S, price) %>%
   tidyr::pivot_wider(names_from = Position,
                      values_from = price,
                      names_prefix = "v") %>% 
-  dplyr::mutate(port_value = vP1 * 2000 - vP2 * 2000 - vP3 * 2000)
+  dplyr::mutate(port_value = vP1 * 2000 * mult - vP2 * 2000 * mult - vP3 * 2000 * mult) %>% 
+  dplyr::select(S,port_value) %>% 
+  dplyr::left_join(port_gamma)
+  
+
+(p5 <- port_summary %>% 
+    ggplot2::ggplot(aes(x = S))+
+    ggplot2::geom_line(aes(y = port_value),color = "blue")+
+    geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
+    geom_hline(yintercept = 0,linetype = "dashed", color = "black", linewidth = 0.5)+
+    scale_x_continuous(labels = scales::dollar_format()) +
+  scale_y_continuous(labels = scales::dollar_format())+
+    labs(title = "Portfolio Value as a Function of F", x = "Futures Price ($/bbl)", y = "Portfolio Value",
+         subtitle = "Shows that we have virtually unlimited downside risk because of the uncovered short call") +
+    theme_minimal())
+
+(p6 <- port_summary %>% 
+    ggplot2::ggplot(aes(x = S))+
+    ggplot2::geom_line(aes(y = port_gamma),color = "blue")+
+    geom_vline(xintercept = 70, linetype = "dashed", color = "gold", linewidth = 0.5) +
+    geom_vline(xintercept = 55, linetype = "dashed", color = "gold", linewidth = 0.5) +
+    geom_vline(xintercept = 80, linetype = "dashed", color = "gold", linewidth = 0.5) +
+    scale_x_continuous(labels = scales::dollar_format()) +
+    labs(title = "Portfolio Gamma as a Function of F", x = "Futures Price ($/bbl)", y = "Portfolio GBS Gamma",
+         subtitle = "Dashed lines are the strike prices of each position") +
+    theme_minimal())
+
 
 
 
 
 ```
+ 
+ + The MTM portfolio value shows us very clearly through its negative slope that we are currently holding a negative delta portfolio. It also shows that the rate of change of delta accelerates as the price moves above $80, this confirms that the short call position is driving most of the risk and negative delta in this portfolio. To further prove that, the short put that has a strike of 55, is OTM for the majority of the chart so it's delta does not contribute heavily to the portfolio even though it has a positive delta. 
+ 
++ The portfolio gamma is highest near the `$`65 range and lowest at the `$`50 range. The high gamma range corresponds to the long put that we hold, because its strike is at `$`70, as the price moves down to 70, the put gets closer to being ITM and so its delta is nearing -1 and gamma increases accordingly. As for the global minimum at 55, the long put moves deep ITM and so its gamma decays as it moves deeper ITM, because the short put nears the money at 55, its gamma contributes heavily to the portfolio as the call option is deep OTM and the short option is deep ITM, meaning that the short put pulls the entire portfolio gamma down with little resistance from the other positions. 
 
++ For a delta-hedger, gamma tells them how delta changes with the change in price. So a gamma of -10 means that for a $1 change in the underlying, the delta decreases by 10. Gamma is the basis of re-hedging the portfolio with price moves to remain delta-neutral
 
 
 
@@ -275,7 +347,46 @@ Sum Greeks across positions to show **portfolio-level Greeks** at the current ma
 
 ```{r q2}
 
+port_delta <- port %>% 
+  dplyr::select(Position, S, delta) %>%
+  tidyr::pivot_wider(names_from = Position,
+                     values_from = delta,
+                     names_prefix = "d") %>% 
+  dplyr::mutate(port_delta = (dP1 * 2000 - dP2 * 2000 - dP3 * 2000)*mult) %>% 
+  dplyr::select(S,port_delta)
+
+port_vega <- port %>% 
+  dplyr::select(Position, S, vega) %>%
+  tidyr::pivot_wider(names_from = Position,
+                     values_from = vega,
+                     names_prefix = "v") %>% 
+  dplyr::mutate(port_vega = (vP1 * 2000 - vP2 * 2000 - vP3 * 2000)*mult) %>% 
+  dplyr::select(S,port_vega)
+
+port_theta <- port %>% 
+  dplyr::select(Position, S, theta) %>%
+  tidyr::pivot_wider(names_from = Position,
+                     values_from = theta,
+                     names_prefix = "t") %>% 
+  dplyr::mutate(port_theta = (tP1 * 2000 - tP2 * 2000 - tP3 * 2000)*mult) %>% 
+  dplyr::select(S,port_theta)
+
+(port_greeks <- port_delta %>% 
+  dplyr::left_join(port_gamma) %>% 
+  dplyr::left_join(port_vega) %>% 
+  dplyr::left_join(port_theta) %>% 
+  gt::gt() %>% 
+  gt::tab_header(
+    title    = "WTI Portfolio Greeks") %>% 
+  gt::fmt_number(decimals = 2))
+
+
+
 ```
+
+
++ Because the portfolio has three positions of 2000 options each, and because they are on the same underlying, the portfolio will never have a positive delta. The reason is that the short call and long puts both have negative deltas so the short put is the only position with a positive delta and it is not large enough to make the portfolio delta positive. 
+
 
 # Question 3 (8 points)
 
@@ -301,6 +412,104 @@ with h = `step_S` and k = `step_v`. The Vanna P&L contribution is Vanna × ΔF �
 Present all results in a `gt::gt()` table. Which position dominates the loss? Is the Greek attribution a reliable approximation here, and why or why not?
 
 ```{r q3}
+
+# Define Variables
+f_jump <- 17
+vol_jump <- 0.2
+t <- 1/365
+
+
+# Calculate Vanna First
+
+
+
+
+iran_price <- t1 %>%
+  dplyr::select(Position, Type, X, sigma, delta, gamma,
+                vega, theta, P_current, n_contracts) %>%
+  dplyr::mutate(
+    P_actual = purrr::pmap_dbl(
+      .l = list(S=F0+f_jump, X=X, T2M=T2M-t, r=r, b=0, N=1000,
+                sigma=sigma+vol_jump, type=Type, optionStyle="american"),
+      .f = calculate_crr),
+    vanna_pp = purrr::pmap_dbl(
+      .l = list(S=F0+delta_step, X=X, T2M=T2M, r=r, b=0, N=1000,
+                sigma=sigma+vega_step, type=Type, optionStyle="american"),
+      .f = calculate_crr),
+    vanna_pm = purrr::pmap_dbl(
+      .l = list(S=F0+delta_step, X=X, T2M=T2M, r=r, b=0, N=1000,
+                sigma=sigma-vega_step, type=Type, optionStyle="american"),
+      .f = calculate_crr),
+    vanna_mp = purrr::pmap_dbl(
+      .l = list(S=F0-delta_step, X=X, T2M=T2M, r=r, b=0, N=1000,
+                sigma=sigma+vega_step, type=Type, optionStyle="american"),
+      .f = calculate_crr),
+    vanna_mm = purrr::pmap_dbl(
+      .l = list(S=F0-delta_step, X=X, T2M=T2M, r=r, b=0, N=1000,
+                sigma=sigma-vega_step, type=Type, optionStyle="american"),
+      .f = calculate_crr),
+    vanna    = ((vanna_pp - vanna_pm - vanna_mp + vanna_mm) /
+               (4 * delta_step * vega_step)) * n_contracts * mult,
+    actual_PL = (P_actual - P_current) * n_contracts * mult,
+    PL_delta  = delta  * f_jump,
+    PL_gamma  = 0.5    * gamma  * f_jump^2,
+    PL_vega   = vega   * vol_jump,
+    PL_theta  = theta,
+    PL_vanna  = vanna  * f_jump * vol_jump,
+    attr_PL   = PL_delta + PL_gamma + PL_vega + PL_theta + PL_vanna,
+    residual  = actual_PL - attr_PL,
+    resid_pct = residual / abs(actual_PL) * 100) %>% 
+  dplyr::mutate(
+    pct_delta = PL_delta / attr_PL * 100,
+    pct_gamma = PL_gamma / attr_PL * 100,
+    pct_vega  = PL_vega  / attr_PL * 100,
+    pct_theta = PL_theta / attr_PL * 100,
+    pct_vanna = PL_vanna / attr_PL * 100
+  ) %>%
+  dplyr::select(-vanna_pp, -vanna_pm, -vanna_mp, -vanna_mm)
+
+
+iran_price %>%
+  dplyr::select(Position, actual_PL, attr_PL, residual, resid_pct,
+                PL_delta, PL_gamma, PL_vega, PL_theta, PL_vanna,
+                pct_delta, pct_gamma, pct_vega, pct_theta, pct_vanna) %>%
+  gt::gt() %>%
+  gt::tab_header(
+    title    = gt::md("**P&L Attribution — WTI Options Portfolio**")) %>% 
+  gt::tab_spanner(label = "P&L ($)",
+                  columns = c(actual_PL, attr_PL, residual, resid_pct)) %>%
+  gt::tab_spanner(label = "Attribution by Greek ($)",
+                  columns = c(PL_delta, PL_gamma, PL_vega, PL_theta, PL_vanna)) %>%
+  gt::tab_spanner(label = "% of Attributed P&L",
+                  columns = c(pct_delta, pct_gamma, pct_vega, pct_theta, pct_vanna)) %>% 
+  gt::cols_label(
+    Position  = "Position",
+    actual_PL = "Actual",
+    attr_PL   = "Attributed",
+    residual  = "Residual ($)",
+    resid_pct = "Residual (%)",
+    PL_delta  = "Delta",  
+    PL_gamma = "Gamma",
+    PL_vega   = "Vega",  
+    PL_theta = "Theta",  
+    PL_vanna = "Vanna",
+    pct_delta = "Delta",  
+    pct_gamma = "Gamma",
+    pct_vega  = "Vega",  
+    pct_theta = "Theta", pct_vanna = "Vanna") %>% 
+  gt::fmt_currency(
+    columns  = c(actual_PL, attr_PL, residual,
+                 PL_delta, PL_gamma, PL_vega, PL_theta, PL_vanna),
+    decimals = 0
+  ) %>%
+  gt::fmt_number(
+    columns  = c(resid_pct, pct_delta, pct_gamma,
+                 pct_vega, pct_theta, pct_vanna),
+    decimals = 1,
+    suffix   = "%"
+  )
+
+
 
 ```
 
