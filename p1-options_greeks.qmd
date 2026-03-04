@@ -1,0 +1,333 @@
+---
+title: "WTI Options Portfolio: Full Greek P&L Attribution"
+subtitle: "Individual Project"
+date: "`r Sys.Date()`"
+author: "Your Name"
+format:
+  html:
+    theme: cosmo
+    embed-resources: true
+    page-layout: full
+    toc: true
+    toc-location: left
+    grid:
+      margin-width: 200px
+      body-width: 1000px
+    resource:
+      - "*.js"
+      - "*.mp3"
+editor: source
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+library(tidyverse)
+library(gt)
+library(RTL)
+library(gridExtra)
+
+F_0  <- 73.00
+r    <- 0.04
+mult <- 1000
+
+port <- dplyr::tribble(
+  ~pos, ~type,   ~K,     ~T2M,   ~sigma,  ~n,
+  "P1", "put",   70.00,  3/12,   0.3500,  +2000L,
+  "P2", "put",   55.00,  3/12,   0.4200,  -2000L,
+  "P3", "call",  80.00,  3/12,   0.3000,  -2000L
+)
+```
+
+# Description
+
+You are a risk analyst at an energy trading desk. The desk holds a portfolio of WTI crude oil options — specifically, options on NYMEX CL futures contracts.
+
+Your role is to:
+
++ Build a full-Greek P&L attribution framework: the standard tool used on trading desks to explain daily P&L movements across **Delta** (directional exposure), **Gamma** (curvature), **Vega** (volatility sensitivity), **Vanna** (sensitivity of delta to volatility), and **Theta** (time decay).
++ You are expected to understand contracts and use the right option model and specifications in the `RTL` package.
++ Tell me in your own words the portfolio's risk profile, how the Greeks interact, and what this means for a desk managing this book in practice.
++ No AI use in any shape or form and assignment submitted should be a github repo that I can clone and assess.
+
+# Objective
+
+1. Compute numerical Greeks for each position and for the overall portfolio across the full WTI price range ($50–$100/bbl).
+2. Interpret the portfolio's mark-to-market profile and explain how changing Gamma across strike levels affects delta-hedging in practice.
+3. Build a complete P&L attribution framework — Delta, Gamma, Vega, Vanna, and Theta — and verify it accurately explains overnight P&L under a realistic market move.
+4. Critically evaluate where and why the linear/quadratic approximation breaks down as spot moves away from current market.
+
+# Exposure
+
+```{r exposure_table, echo=FALSE}
+dplyr::tribble(
+  ~Position, ~Type,  ~`Strike K ($/bbl)`, ~Maturity, ~`Impl. Vol`, ~Contracts,
+  "P1", "Put",  70.00, "3M", "35.00%", "+2,000 long",
+  "P2", "Put",  55.00, "3M", "42.00%", "-2,000 short",
+  "P3", "Call", 80.00, "3M", "30.00%", "-2,000 short"
+) |>
+  gt::gt() |>
+  gt::tab_header(
+    title    = "WTI Options Portfolio",
+    subtitle = "Three-way collar: long put spread + short OTM call  |  F\u2080 = $73/bbl"
+  ) |>
+  gt::fmt_number(columns = `Strike K ($/bbl)`, decimals = 2)
+```
+
+**Market parameters**: current WTI futures price F₀ = **$73.00/bbl**, risk-free rate r = **4.00%** (annualised, continuously compounded).
+
+Select the appropriate pricing model from the `RTL` package for options on WTI crude oil futures. Consider the nature of the underlying contract — a NYMEX CL futures — when choosing the model and setting its cost-of-carry parameter.
+
+# Question 1 (9 points)
+
+For **each position**, compute the following Greeks **numerically** using central differences evaluated at `F_0`:
+
++ **Delta** (∂V/∂F)
++ **Gamma** (∂²V/∂F²)
++ **Vega** (∂V/∂σ)
++ **Theta** (∂V/∂T)
+
+**Step size selection**: For each Greek, choose an appropriate finite-difference step size and explain your reasoning. A good step is small enough that the finite difference accurately approximates the true derivative, but not so small that floating-point subtraction errors dominate. Consider the natural scale of each risk factor (price in $/bbl, vol as a decimal, time in years) and any special considerations for the short-dated options in this portfolio.
+
+----
+
+**Answer**
+
++ **Delta**: Because Delta measure the option's sensitivity to the underlying CL future, and the minimum price fluctuation per the CME is 1 cent per barrel, then the step size should be at least 1 cent. But, to avoid subtraction errors, I checked the listed CL futures options and found that they have strike prices that vary in 50 cent increments I will choose the step size to be 25 cents per barrel. The idea is that If a future moves 25 cents up or down, then an option will either move deeper ITM, deeper OTM, or close to ITM. This will hopefully be a sufficient step size that will not smooth the curve in areas where delta is high and sensitive to price moves.  
+
++ **Gamma**: Follows the same logic and step size as gamma
+
++ **Vega**: The options in this portfolio all expire in 3 months, meaning that they are on a steeper end of the volatility smile. That being said, the calls and puts have very different implied vol - the puts have a higher IV so that means that the market values a steep drop in price more than a sharp increase. I would assume that the vegas would also be differnet and that the portfolio vega would be largely drive by the puts as they currently stand, so I want to explore having the step size scale with IV while remaining proportional across the positions. (i.e wih a higher IV we can use a higher step size to capture more of the trend of the smile at that point. So we use 3% * IV as the step size). For now, I will use a 1% step size in IV across the portfolio.
+
++ **Theta**: For Theta, becasue this measures the sensitivity to passage of time, I will use 1 calendar day as the step size instead of using 1 trading day. Becuse even if the markets are closed, time still goes by and T2M decreases, so I believe that 1 calendar day is an adequate time step. 
+
+-----
+
+**Dollar scaling**: Each raw numerical derivative gives the option price change **per barrel** for a unit move in the risk factor. To express the Greek as a total dollar P&L impact for a position, multiply by `n × mult`, where `n` is the signed contract count (positive = long, negative = short) and `mult = 1,000 bbl/contract`. For example, a delta of 0.50/bbl for a 3,000-contract long position means the desk gains or loses 0.50 × 3,000 × 1,000 = $1,500,000 per $1/bbl move in WTI.
+
+Create plots showing each Greek vs. futures price over F ∈ [50, 100], with one line per position.
+
+**d.** Compute the **portfolio mark-to-market (MTM)** value and **portfolio Gamma** across F ∈ [50, 100]. Plot them on two separate panels. In 3–5 sentences, explain:
+
+- What the MTM profile shape reveals about the portfolio's net directionality and curvature.
+- Where portfolio Gamma is highest and lowest across the price range, and why those regions correspond to specific positions.
+- What the changing Gamma means for a delta-hedger rebalancing daily as WTI moves through the $50–$100 range.
+
+```{r}
+library(RTL)
+library(tidyverse)
+library(purrr)
+library(patchwork)
+
+```
+
+
+```{r q1}
+
+
+t1 <- dplyr::tribble(
+  ~Position, ~Type,  ~`Strike K ($/bbl)`, ~Maturity, ~`Impl. Vol`, ~Contracts,
+  "P1", "Put",  70.00, "3M", "35.00%", "+2,000 long",
+  "P2", "Put",  55.00, "3M", "42.00%", "-2,000 short",
+  "P3", "Call", 80.00, "3M", "30.00%", "-2,000 short")
+
+F0 <- 73
+r <- 0.04
+T2M <- 3/12
+
+delta_step <- 0.25
+vega_step <- 1/100
+theta_step <- 1/365
+
+# I am assuming these options are American style options, so I will use the CRR model to value them and set the cost of carry equal to 0 because neither the futures nor the options pay dividends, and because the options are on WTI futures, there are also no storage costs related to owning a position in a future's contract, there is however, a financing cost in the form of margin, but I will ignore that for the purposes of this project becasue the pricing models that we use to value the options are based on a risk neutral probability. 
+
+
+calculate_crr <- function(S, X, T2M, r, b, N, sigma, type, optionStyle = "american") {
+   out <- RTL::CRROption(S, X, sigma, r, b, T2M, N, type, optionStyle)$price
+  return(out)}
+
+t1 <- t1 %>% 
+  dplyr::mutate(sigma = as.numeric(str_extract(`Impl. Vol`,pattern = "\\d{2}\\.\\d{2}")) / 100,
+                X = `Strike K ($/bbl)`,
+                Type = tolower(Type)) %>% 
+  dplyr::mutate(
+    P_current = purrr::pmap_dbl(
+      .l = list(S = F0, X = X,T2M = T2M, r = r, b = 0, N = 1000, sigma = sigma, type = Type, optionStyle = "american"),
+      .f = calculate_crr
+    ),
+    P_up = purrr::pmap_dbl(
+      .l = list(S = F0 + delta_step, X = X,T2M = T2M, r = r, b = 0, N = 1000, sigma = sigma, type = Type, optionStyle = "american"),
+      .f = calculate_crr
+    ),
+    P_down = purrr::pmap_dbl(
+      .l = list(S = F0 - delta_step, X = X,T2M = T2M, r = r, b = 0, N = 1000, sigma = sigma, type = Type, optionStyle = "american"),
+      .f = calculate_crr
+    ),
+    P_up_vega = purrr::pmap_dbl(
+      .l = list(S = F0, X = X,T2M = T2M, r = r, b = 0, N = 1000, sigma = sigma + vega_step, type = Type, optionStyle = "american"),
+      .f = calculate_crr
+    ) ,
+      P_down_vega = purrr::pmap_dbl(
+      .l = list(S = F0, X = X,T2M = T2M, r = r, b = 0, N = 1000, sigma = sigma - vega_step, type = Type, optionStyle = "american"),
+      .f = calculate_crr
+    ),
+     P_down_theta = purrr::pmap_dbl(
+      .l = list(S = F0, X = X,T2M = T2M - theta_step, r = r, b = 0, N = 1000, sigma = sigma, type = Type, optionStyle = "american"),
+      .f = calculate_crr
+    ),
+    delta = (P_up - P_down) / 2 * delta_step,
+    gamma = (P_up - 2 * P_current + P_down) / delta_step ^ 2,
+    vega = (P_up_vega - P_down_vega) / 2 * vega_step * 100,
+    theta = P_down_theta - P_current
+    )
+
+
+F.grid <- seq(from = 50, to = 100, by  = 0.5)
+
+greeks_df <- t1 %>% 
+  dplyr::select(Position,Type,sigma,X) %>% 
+  tidyr::crossing(S = F.grid) %>% 
+  rowwise() %>% 
+  dplyr::mutate(delta = RTL::GBSOption(S = S, X = X, T2M = T2M, r = r, b = 0, sigma = sigma, type = Type)$delta,
+                gamma = RTL::GBSOption(S = S, X = X, T2M = T2M, r = r, b = 0, sigma = sigma, type = Type)$gamma,
+                vega = RTL::GBSOption(S = S, X = X, T2M = T2M, r = r, b = 0, sigma = sigma, type = Type)$vega,
+                theta = RTL::GBSOption(S = S, X = X, T2M = T2M, r = r, b = 0, sigma = sigma, type = Type)$theta) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::mutate(Position = case_match(
+    Position,
+    "P1" ~ "Long Put  X=$70 σ=35%",
+    "P2" ~ "Short Put  X=$55 σ=42%",
+    "P3" ~ "Short Call X=$80 σ=30%"
+  ))
+  
+
+p1 <- greeks_df %>%
+  ggplot(aes(x = S, y = delta, color = Position, linetype = Position)) +
+  geom_line(linewidth = 0.9) +
+  geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
+  scale_x_continuous(labels = scales::dollar_format()) +
+  labs(title = "Delta", x = "Futures Price ($/bbl)", y = "Delta") +
+  theme_minimal()
+
+p2 <- greeks_df %>%
+  ggplot(aes(x = S, y = gamma, color = Position, linetype = Position)) +
+  geom_line(linewidth = 0.9) +
+  geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
+  scale_x_continuous(labels = scales::dollar_format()) +
+  labs(title = "Gamma", x = "Futures Price ($/bbl)", y = "Gamma") +
+  theme_minimal()
+
+p3 <- greeks_df %>%
+  ggplot(aes(x = S, y = vega, color = Position, linetype = Position)) +
+  geom_line(linewidth = 0.9) +
+  geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
+  scale_x_continuous(labels = scales::dollar_format()) +
+  labs(title = "Vega", x = "Futures Price ($/bbl)", y = "Vega") +
+  theme_minimal()
+
+p4 <- greeks_df %>%
+  ggplot(aes(x = S, y = theta, color = Position, linetype = Position)) +
+  geom_line(linewidth = 0.9) +
+  geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
+  scale_x_continuous(labels = scales::dollar_format()) +
+  labs(title = "Theta", x = "Futures Price ($/bbl)", y = "Theta") +
+  theme_minimal()
+
+p1 
+p2  
+p3
+p4
+
+```
+
+
+```{r q1.d}
+
+# A more valuable put means price is dropping so a short put will decrease portfolio value and a long put will increase it as prices fall. 
+# A more valuable call means price rallies. So as price increases, a short call decreases portfolio value.
+
+# Need to add gamma here and scale everything by # of barrels as well
+
+port_val <- t1 %>% 
+  dplyr::select(Position,Type,sigma,X) %>% 
+  tidyr::crossing(S = F.grid) %>% 
+  dplyr::rowwise() %>% 
+  dplyr::mutate(price = RTL::GBSOption(S = S, X = X, T2M = T2M, r = r, b = 0, sigma = sigma, type = Type)$price) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::select(Position, S, price) %>%
+  tidyr::pivot_wider(names_from = Position,
+                     values_from = price,
+                     names_prefix = "v") %>% 
+  dplyr::mutate(port_value = vP1 * 2000 - vP2 * 2000 - vP3 * 2000)
+
+
+
+
+```
+
+
+
+
+
+# Question 2 (3 points)
+
+Sum Greeks across positions to show **portfolio-level Greeks** at the current market. Present in a `gt::gt()` table. At approximately what futures price does the portfolio delta change sign?
+
+```{r q2}
+
+```
+
+# Question 3 (8 points)
+
+Overnight, US-Iran tensions escalate sharply. The US strikes Iranian nuclear facilities; Iran retaliates by mining the Strait of Hormuz. WTI gaps up at the open:
+
++ WTI futures: F moves from **73.00** to **90.00** (+$17.00/bbl)
++ Implied volatility: each position's sigma spikes by **+0.20** (20 vol points)
++ Time: **1 calendar day** passes
+
+For each position and for the portfolio total, compute:
+
+1. **Actual P&L**: full revaluation at new F, new sigma, new T. P&L = (new price − old price) × n × mult.
+2. **Attributed P&L**: ΔV ≈ (Delta × ΔF) + (½ × Gamma × ΔF²) + (Vega × Δσ) + (Vanna × ΔF × Δσ) + (Theta × Δt), scaled to dollars.
+3. **Unexplained residual**: Actual − Attributed.
+4. **Attribution breakdown**: what share (%) of Attributed P&L comes from each Greek?
+
+**Vanna** (∂²V/∂F∂σ) measures how delta changes as volatility moves. With both a large spot jump and a large vol spike coinciding, Vanna is non-negligible. Use a central-difference cross-partial:
+
+$$\text{Vanna} = \frac{V(F+h, \sigma+k) - V(F+h, \sigma-k) - V(F-h, \sigma+k) + V(F-h, \sigma-k)}{4 \cdot h \cdot k}$$
+
+with h = `step_S` and k = `step_v`. The Vanna P&L contribution is Vanna × ΔF × Δσ.
+
+Present all results in a `gt::gt()` table. Which position dominates the loss? Is the Greek attribution a reliable approximation here, and why or why not?
+
+```{r q3}
+
+```
+
+# Question 4 (4 points)
+
+The Iran war scenario (ΔF = +$17) is an extreme move. How well does the Greek approximation hold as WTI moves further from the current market?
+
+Holding vol and time constant at their initial values, compute Actual P&L (full revaluation) and Attributed P&L (Delta + Gamma only) for the portfolio across ΔF ∈ [–20, +20] in $1 increments.
+
+**a.** Plot Actual, Attributed, and the Residual on the same chart. Mark the Iran war move (ΔF = +17) with a vertical line.
+
+**b.** At what ΔF does the absolute residual first exceed 5% of the absolute Actual P&L? Report in a `gt::gt()` table. What does this tell you about using Greeks for risk management in extreme scenarios?
+
+```{r q4}
+
+```
+
+# Question 5 (6 points)
+
+Discuss the key learnings and insights from a Greek risk management perspective. Your explanation must:
+
++ Interpret the **full revaluation MTM profile** from Q1(d): describe the portfolio's curvature structure across the $50–$100 range. Identify the regions of maximum and minimum Gamma. Explain what the changing Gamma means for a desk running this portfolio — specifically, how frequently delta rebalancing is needed as WTI moves through the strikes.
++ Interpret the **full revaluation P&L and Gamma profiles** from Q1(d): describe the portfolio's curvature structure and identify which positions drive positive vs negative Gamma regions.
++ Identify which position and which Greek drove the largest loss in the Iran war scenario, and explain why that was predictable from the portfolio structure.
++ Explain the role of **Vanna**: why is it non-trivial when both a large spot jump and a large vol spike occur simultaneously?
++ Explain why the Greek approximation (Q4) breaks down at extreme moves, and what this means for a real desk managing this book.
+
+Pay particular attention to why textbook delta-hedging assumptions break down in geopolitical gap scenarios, and what risk tools a real energy desk would use instead.
+
+*Your answer here.*
