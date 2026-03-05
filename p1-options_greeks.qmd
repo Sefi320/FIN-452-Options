@@ -115,14 +115,14 @@ Create plots showing each Greek vs. futures price over F ∈ [50, 100], with one
 - Where portfolio Gamma is highest and lowest across the price range, and why those regions correspond to specific positions.
 - What the changing Gamma means for a delta-hedger rebalancing daily as WTI moves through the $50–$100 range.
 
-```{r}
+```{r echo=FALSE}
 library(purrr)
 library(patchwork)
 
 ```
 
 
-```{r q1}
+```{r q1, echo=FALSE}
 
 
 t1 <- dplyr::tribble(
@@ -218,38 +218,42 @@ greeks_df <- t1 %>%
   
 
 p1 <- greeks_df %>%
-  ggplot(aes(x = S, y = delta, color = Position, linetype = Position)) +
-  geom_line(linewidth = 0.9) +
-  geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
-  scale_x_continuous(labels = scales::dollar_format()) +
-  scale_y_continuous(labels = scales::dollar_format())+
+  ggplot2::ggplot(aes(x = S, y = delta, color = Position, linetype = Position)) +
+  ggplot2::geom_line(linewidth = 0.9) +
+  ggplot2::geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
+  ggplot2::annotate("text", x = F0, y = Inf, vjust = 1.5,hjust = 1,label = "Current WTI Price", color = "gold", size = 3)+
+  ggplot2::scale_x_continuous(labels = scales::dollar_format()) +
+  ggplot2::scale_y_continuous(labels = scales::dollar_format())+
   labs(title = "Delta", x = "Futures Price ($/bbl)", y = "Delta") +
   theme_minimal()
 
 p2 <- greeks_df %>%
-  ggplot(aes(x = S, y = gamma, color = Position, linetype = Position)) +
-  geom_line(linewidth = 0.9) +
-  geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
-  scale_x_continuous(labels = scales::dollar_format()) +
-  scale_y_continuous(labels = scales::dollar_format())+
+  ggplot2::ggplot(aes(x = S, y = gamma, color = Position, linetype = Position)) +
+  ggplot2::geom_line(linewidth = 0.9) +
+  ggplot2::geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
+  ggplot2::annotate("text", x = F0, y = Inf, vjust = 1.5,hjust = 1,label = "Current WTI Price", color = "gold", size = 3)+
+  ggplot2::scale_x_continuous(labels = scales::dollar_format()) +
+  ggplot2::scale_y_continuous(labels = scales::dollar_format())+
   labs(title = "Gamma", x = "Futures Price ($/bbl)", y = "Gamma") +
   theme_minimal()
 
 p3 <- greeks_df %>%
-  ggplot(aes(x = S, y = vega, color = Position, linetype = Position)) +
-  geom_line(linewidth = 0.9) +
-  geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
-  scale_x_continuous(labels = scales::dollar_format()) +
-  scale_y_continuous(labels = scales::dollar_format())+
+  ggplot2::ggplot(aes(x = S, y = vega, color = Position, linetype = Position)) +
+  ggplot2::geom_line(linewidth = 0.9) +
+  ggplot2::geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
+  ggplot2::annotate("text", x = F0, y = Inf, vjust = 1.5,hjust = 1,label = "Current WTI Price", color = "gold", size = 3)+
+  ggplot2::scale_x_continuous(labels = scales::dollar_format()) +
+  ggplot2::scale_y_continuous(labels = scales::dollar_format())+
   labs(title = "Vega", x = "Futures Price ($/bbl)", y = "Vega") +
   theme_minimal()
 
 p4 <- greeks_df %>%
-  ggplot(aes(x = S, y = theta, color = Position, linetype = Position)) +
-  geom_line(linewidth = 0.9) +
-  geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
-  scale_x_continuous(labels = scales::dollar_format()) +
-  scale_y_continuous(labels = scales::dollar_format())+
+  ggplot2::ggplot(aes(x = S, y = theta, color = Position, linetype = Position)) +
+  ggplot2::geom_line(linewidth = 0.9) +
+  ggplot2::geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
+  ggplot2::annotate("text", x = F0, y = Inf, vjust = 1.5,hjust = 1,label = "Current WTI Price", color = "gold", size = 3)+
+  ggplot2::scale_x_continuous(labels = scales::dollar_format()) +
+  ggplot2::scale_y_continuous(labels = scales::dollar_format())+
   labs(title = "Theta", x = "Futures Price ($/bbl)", y = "Theta") +
   theme_minimal()
 
@@ -263,7 +267,7 @@ p4
 
 
 
-```{r q1.d}
+```{r q1.d, echo=FALSE}
 
 # A more valuable put means price is dropping so a short put will decrease portfolio value and a long put will increase it as prices fall. 
 # A more valuable call means price rallies. So as price increases, a short call decreases portfolio value.
@@ -308,7 +312,8 @@ port_gamma <- port %>%
     ggplot2::ggplot(aes(x = S))+
     ggplot2::geom_line(aes(y = port_value),color = "blue")+
     geom_vline(xintercept = F0, linetype = "dashed", color = "gold", linewidth = 0.5) +
-    geom_hline(yintercept = 0,linetype = "dashed", color = "black", linewidth = 0.5)+
+    ggplot2::annotate("text", x = F0, y = Inf, vjust = 1.5,hjust = 1,label = "Current WTI Price", color = "gold", size = 3)+
+    geom_hline(yintercept = 0,linetype = "dashed", color = "darkgrey", linewidth = 0.5)+
     scale_x_continuous(labels = scales::dollar_format()) +
   scale_y_continuous(labels = scales::dollar_format())+
     labs(title = "Portfolio Value as a Function of F", x = "Futures Price ($/bbl)", y = "Portfolio Value",
@@ -319,8 +324,11 @@ port_gamma <- port %>%
     ggplot2::ggplot(aes(x = S))+
     ggplot2::geom_line(aes(y = port_gamma),color = "blue")+
     geom_vline(xintercept = 70, linetype = "dashed", color = "gold", linewidth = 0.5) +
+    ggplot2::annotate("text", x = 70, y = Inf, vjust = 1.5,hjust = 1,label = "Long Put", color = "gold", size = 3)+
     geom_vline(xintercept = 55, linetype = "dashed", color = "gold", linewidth = 0.5) +
+    ggplot2::annotate("text", x = 55, y = Inf, vjust = 1.5,hjust = 1,label = "Short Put", color = "gold", size = 3)+
     geom_vline(xintercept = 80, linetype = "dashed", color = "gold", linewidth = 0.5) +
+    ggplot2::annotate("text", x = 80, y = Inf, vjust = 1.5,hjust = 1,label = "Short Call", color = "gold", size = 3)+
     scale_x_continuous(labels = scales::dollar_format()) +
     labs(title = "Portfolio Gamma as a Function of F", x = "Futures Price ($/bbl)", y = "Portfolio GBS Gamma",
          subtitle = "Dashed lines are the strike prices of each position") +
@@ -345,7 +353,7 @@ port_gamma <- port %>%
 
 Sum Greeks across positions to show **portfolio-level Greeks** at the current market. Present in a `gt::gt()` table. At approximately what futures price does the portfolio delta change sign?
 
-```{r q2}
+```{r q2, echo=FALSE}
 
 port_delta <- port %>% 
   dplyr::select(Position, S, delta) %>%
@@ -378,7 +386,8 @@ port_theta <- port %>%
   gt::gt() %>% 
   gt::tab_header(
     title    = "WTI Portfolio Greeks") %>% 
-  gt::fmt_number(decimals = 2))
+  gt::fmt_number(decimals = 0)) %>% 
+  gt::cols_align(align = "center")
 
 
 
@@ -411,7 +420,7 @@ with h = `step_S` and k = `step_v`. The Vanna P&L contribution is Vanna × ΔF �
 
 Present all results in a `gt::gt()` table. Which position dominates the loss? Is the Greek attribution a reliable approximation here, and why or why not?
 
-```{r q3}
+```{r q3, echo=FALSE}
 
 # Define Variables
 f_jump <- 17
@@ -507,11 +516,18 @@ iran_price %>%
                  pct_vega, pct_theta, pct_vanna),
     decimals = 1,
     suffix   = "%"
-  )
+  ) %>% 
+  gt::cols_align(align = "auto")
 
 
 
 ```
+
+
++ Like we noted earlier, the short call option is the position that carries most of the risk and is the position that is driving most of the losses in this scenario. While the long put position also loses, it is not as nearly close to the amount that the call loses. The short put gains because the option holder will not exercise under this scenario so we can keep the option premium without having to deliver on our obligations. 
+
++ Using the greeks to approximate the P&L attribution is not very accurate because the numerical greeks were calculated when the futures price was at $73. At that price point, the long put & short call positions were both near the money, meaning that they had higher absolute deltas and vegas which is not the case after the shift in price and volatility. 
+
 
 # Question 4 (4 points)
 
@@ -523,9 +539,86 @@ Holding vol and time constant at their initial values, compute Actual P&L (full 
 
 **b.** At what ΔF does the absolute residual first exceed 5% of the absolute Actual P&L? Report in a `gt::gt()` table. What does this tell you about using Greeks for risk management in extreme scenarios?
 
-```{r q4}
+```{r q4, echo=FALSE}
+
+price_grid <- seq(from = -20, to = 20, by = 1)
+
+test <- t1 %>% 
+  dplyr::select(Position,Type,sigma,X,n_contracts,P_current,delta,gamma) %>% 
+  tidyr::crossing(price_grid) %>% 
+  dplyr::rowwise() %>% 
+  dplyr::mutate(actual_price = pmap_dbl(
+    .l = list(S=F0 + price_grid, X=X, T2M=T2M, r=r, b=0, N=1000,
+                sigma=sigma, type=Type, optionStyle="american"),
+    .f = calculate_crr
+  ),
+  actual_PL = (actual_price - P_current) * n_contracts * mult,
+  attribute_PL = (delta * price_grid) + (0.5 * gamma * price_grid^2),
+  residual = actual_PL - attribute_PL) %>% 
+  dplyr::ungroup()
+  
+
+(p7 <- test %>%
+  dplyr::group_by(price_grid) %>%
+  dplyr::summarise(
+    Actual     = sum(actual_PL),
+    Attributed = sum(attribute_PL),
+    Residual   = sum(residual),
+    .groups    = "drop") %>%
+  tidyr::pivot_longer(
+    cols      = c(Actual, Attributed, Residual),
+    names_to  = "Series",
+    values_to = "Value") %>%
+  ggplot2::ggplot(aes(x = price_grid, y = Value, color = Series,linetype = Series)) +
+  ggplot2::geom_line() +
+  ggplot2::geom_vline(xintercept = 17, color = "red",linetype = "dashed",linewidth  = 0.6) +
+  ggplot2::annotate("text", x = 17,y = Inf,vjust = 1.5,hjust = 1.2,label = "Iran War Shock (+$17)",color = "red",size    = 3) +
+  ggplot2::scale_linetype_manual(
+    values = c("Actual" = "solid",
+               "Attributed" = "solid",
+               "Residual" = "dashed")) +
+  ggplot2::scale_x_continuous(labels = scales::dollar_format()) +
+  ggplot2::scale_y_continuous(labels = scales::dollar_format()) +
+  ggplot2::labs(
+    title    = "Actual vs Attributed P&L",
+    subtitle = "Greeks approximate actual P&L closely for small moves — divergence grows with shock size",
+    x        = "Futures Price Change ($/bbl)",
+    y        = "Portfolio P&L ($)") +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(legend.position = "bottom"))
+
+
+
+test %>%
+  dplyr::group_by(price_grid) %>%
+  dplyr::summarise(
+    Actual     = sum(actual_PL),
+    Residual   = sum(residual),
+    .groups    = "drop") %>%
+  dplyr::mutate(Residual_pct = abs(Residual) / abs(Actual)) %>% 
+  replace_na(list(Residual_pct = 0)) %>% 
+  gt::gt() %>% 
+  gt::cols_label(Residual_pct = "Residual % of Actual") %>% 
+  gt::fmt_currency(columns = c("Actual","Residual"), decimals = 0) %>% 
+  gt::fmt_percent(columns = Residual_pct,decimals = 2) %>% 
+  gt::cols_align(align = "center",
+                 columns = everything()) %>% 
+  gt::tab_style(
+    style = gt::cell_fill(color = "gold",alpha = 0.5),
+    locations = gt::cells_body(
+    rows = price_grid %in% c(-2, 2)
+    )
+  )
+  
+
+  
+
 
 ```
+
+
+
++ It is obvious that using static greeks for risk hedging is unfeasible in extreme scenarios, as shown in the table above, the residual value exceeds 5% of the actual P&L when the futures price moves by only $2 in either direction. When it moves by 17, like what happened recently, the greeks mis-attributed the P&L by about 50%.
 
 # Question 5 (6 points)
 
