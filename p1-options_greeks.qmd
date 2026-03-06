@@ -2,7 +2,7 @@
 title: "WTI Options Portfolio: Full Greek P&L Attribution"
 subtitle: "Individual Project"
 date: "`r Sys.Date()`"
-author: "Your Name"
+author: "Soumer Seifeddine"
 format:
   html:
     theme: cosmo
@@ -430,9 +430,6 @@ t <- 1/365
 
 # Calculate Vanna First
 
-
-
-
 iran_price <- t1 %>%
   dplyr::select(Position, Type, X, sigma, delta, gamma,
                 vega, theta, P_current, n_contracts) %>%
@@ -442,8 +439,8 @@ iran_price <- t1 %>%
                 sigma=sigma+vol_jump, type=Type, optionStyle="american"),
       .f = calculate_crr),
     vanna_pp = purrr::pmap_dbl(
-      .l = list(S=F0+delta_step, X=X, T2M=T2M, r=r, b=0, N=1000,
-                sigma=sigma+vega_step, type=Type, optionStyle="american"),
+      .l = list(S= F0 + delta_step, X = X, T2M = T2M, r = r, b = 0, N = 1000,
+                sigma= sigma + vega_step, type=Type, optionStyle="american"),
       .f = calculate_crr),
     vanna_pm = purrr::pmap_dbl(
       .l = list(S=F0+delta_step, X=X, T2M=T2M, r=r, b=0, N=1000,
@@ -467,7 +464,7 @@ iran_price <- t1 %>%
     PL_vanna  = vanna  * f_jump * vol_jump,
     attr_PL   = PL_delta + PL_gamma + PL_vega + PL_theta + PL_vanna,
     residual  = actual_PL - attr_PL,
-    resid_pct = residual / abs(actual_PL) * 100) %>% 
+    resid_pct = abs(residual) / abs(actual_PL) * 100) %>% 
   dplyr::mutate(
     pct_delta = PL_delta / attr_PL * 100,
     pct_gamma = PL_gamma / attr_PL * 100,
@@ -632,4 +629,48 @@ Discuss the key learnings and insights from a Greek risk management perspective.
 
 Pay particular attention to why textbook delta-hedging assumptions break down in geopolitical gap scenarios, and what risk tools a real energy desk would use instead.
 
-*Your answer here.*
+------
+
+**Answer: **
+
+```{r}
+p5
+p6
+```
+
++ The negative curvature of the MTM portfolio across the strike prices shows very clearly that this is a negative- delta portfolio. As futures prices rise, the portfolio loses value monotonically. Below `$`80 the MTM curve is relatively gradual — the three positions are partially offsetting each other's delta contributions. The long put and short put deltas partially cancel, and the short call is still OTM so its delta contribution is relatively low, though it is growing. Above $80 the short call crosses its strike and moves ITM, and its delta begins approaching -1 on a 2000 contract position. There is nothing in the remaining structure to resist this — the two puts are now deep OTM with deltas approaching zero and contributing essentially nothing. 
+ 
++ Even though the short put position (strike = $55) contributes a positive delta to the portfolio (shorting a negative delta instrument), at extremely high prices, the put is deep OTM and its delta has little to no effect on offsetting the losses from the call position. However, if prices were to fall below 55, that is when we would see its positive delta contribute more heaily to the portfolio value. 
+
+-----
+
++  As spot falls from `$`73 toward `$`70, the long put at P1 is approaching its strike of `$`70, meaning that its delta is approaching -0.5, and by definition, delta changes at the quickest rate when the option is nearing the money, or ATM. The long put is generating maximum positive gamma in this region because while it is ATM, the short put is about `$`15 OTM and the short call at `$`80 is far OTM. Since the long put is the dominant position in this region, the portfolio gamma is at its global max but it is still negative because the gamma of this position alone is not enough to offset the weight of the other 2 positions and bring the gamma out of the negatives.
+
++ As spot falls below `$`55, the long put is deep ITM and its delta approaches -1, meaning that it behaves like a short futures position as opposed to an actual put option. When delta gets closer to -1, gamma approaches 0 by default. At the same time, the short put is approaching the ATM point and starts moving ITM, meaning that its delta is around -0.5 and gamma is at its peak. But because we are short this position, its gamma is a peak negative gamma to the portfolio. The short call is now `$`25 - `$`30 OTM and irrelevant.
+
++ As spot moves into the `$`70+ region, the long put moves OTM so its delta approaches -1 and its gamma approaches 0. At the same time, the short put gains negative gamma as it moves OTM which results in the trough at `$`80. As prices trend upward from `$`80, the call option begins moving ITM, its delta approaches -0.5 and its gamma accelerates rapidly and the portfolio gamma recovers from the most recent trough. As the call option moves deep ITM, it emulates a long position in the underlying futures, so its delta approaches 1 and itd gamma approaches 0. That is why we see the tail approach 0 as prices increase. 
+
++ While a gamma of lesser magnitude eases the rebalancing costs, in the high price region, the portfolio suffers very heavy losses because of the short call position it holds
+
+
+----
+
++ The position that drove the largest losses in the Iran war shock was the short call option. This was predictable because the call option was already near the money when the price was at `$`73. When the price jumped, the option moved from OTM directly to being `$`10 ITM, and at the same time, the its IV jumped by 20%. The negative delta and vega of this position amplified the losses in this position and were the two largest contributors in this case, followed very closely by vanna. 
+
++ Because the short call is not covered by another call at a higher strike, the losses from this position have no floor and will increase as prices increase.
+
+----
+
++ Vanna measures how delta changes as volatility changes, and how vega changes as prices change. So for a small change in either volatility or price, the two normally vary independently. But in the case of the Iran war, the jump in prices and volatility are not independent. When an uncertain event like this occurs, the IV jumps up and remains elevated as the market is trying to price in the news and try to predict the outcome of the event. That is why vanna also contributes largely to the P&L attribution when large shocks occur.
+
+----
+
++ The greek approximation method breaks down in extreme scenarios because this method assumes that the greeks have constant volatility which is not true in practice. In addition to that, this model also assumes that the greeks are constant over the path the price took, when in reality, with a big jump like this one, some options move ITM and some move OTM and so their greeks change as well. AS for the analytical greeks, the underlying models that are used to price the options like the Black-76 model assumes that the prices follow a continuous path. In other words, they do not take into account the possibility of extreme jumps like this one. 
+
++ Another reason that the greeks approximation method fails, is because when large moves occur, higher order terms from the taylor series expansion begin contributing to the option price that are not taken into consideration here. 
+
++ To counter this, I would assume that a real trading desk uses real time repricing based on the IV surfaces and re-computes the greeks before taking any decisions. They would also probably stress test their portfolio's performance under a grid of scenarios across changes in volatility, price and a combination of both. If they did do that, they would quickly see the large risk they are carrying by owning the uncovered short call position.
+
++ Another strategy I learned about, but not quite sure how its applied in practice is a deal contingent hedge. From my understanding this allows the holder of the deal to execute the deal **if and only if** a specific event occurs. For example, the holder of this portfolio could have a deal contingent hedge that would allow them to buy crude futures at a pre determined price once it exceeds that price. So if the DCH states that they can buy at 85, then as soon as the futures price exceeds 85, the holder has the right to buy a pre-defined number of futures at 85. So this effectively emulates a call option. This strategy comes with some drawbacks, one of them being that these contract are not exchange traded but have to be negotiated OTC with the counter party. This effectively exposes you to counter party credit risk. Another thing is that these contract would probably demand a much higher premium than a plain vanilla option.
+
+----
